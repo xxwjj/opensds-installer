@@ -85,7 +85,14 @@ OPENSDS_GLOBAL_CONFIG_DOC
 cp "$ANSIBLE_CONF_DIR/policy.json" "$OPENSDS_CONFIG_DIR"
 }
 
-create_user_and_endpoint(){
+multicloud_conf() {
+    local compose_file=/opt/opensds-gelato-linux-amd64/docker-compose.yml
+    sed -i "s,OS_AUTH_AUTHSTRATEGY:.*$,OS_AUTH_AUTHSTRATEGY: \"keystone\"," $compose_file
+    sed -i "s,OS_AUTH_URL:.*$,OS_AUTH_URL: \"http://$HOST_IP/identity\"," $compose_file
+    sed -i "s,OS_USERNAME:.*$,OS_USERNAME: \"$MULTICLOUD_SERVER_NAME\"," $compose_file
+    sed -i "s,OS_PASSWORD:.*$,OS_PASSWORD: \"$MULTICLOUD_PASSWORD\"," $compose_file
+}
+create_user_and_endpoint_for_opensds(){
     . "$DEV_STACK_DIR/openrc" admin admin
     openstack user create --domain default --password "$STACK_PASSWORD" "$OPENSDS_SERVER_NAME"
     openstack role add --project service --user "$OPENSDS_SERVER_NAME" admin
@@ -97,6 +104,23 @@ create_user_and_endpoint(){
     openstack endpoint create --region RegionOne "opensds$OPENSDS_VERSION" public "http://$HOST_IP:50040/$OPENSDS_VERSION/%(tenant_id)s"
     openstack endpoint create --region RegionOne "opensds$OPENSDS_VERSION" internal "http://$HOST_IP:50040/$OPENSDS_VERSION/%(tenant_id)s"
     openstack endpoint create --region RegionOne "opensds$OPENSDS_VERSION" admin "http://$HOST_IP:50040/$OPENSDS_VERSION/%(tenant_id)s"
+}
+
+create_user_and_endpoint_for_multicloud(){
+    . "$DEV_STACK_DIR/openrc" admin admin
+    if openstack user show $MULTICLOUD_SERVER_NAME &>/dev/null; then
+        return 
+    fi
+    openstack user create --domain default --password "$STACK_PASSWORD" "$MULTICLOUD_SERVER_NAME"
+    openstack role add --project service --user "$MULTICLOUD_SERVER_NAME" admin
+    openstack group create service
+    openstack group add user service "$MULTICLOUD_SERVER_NAME"
+    openstack role add service --project service --group service
+    openstack group add user admins admin
+    openstack service create --name "multicloud$MULTICLOUD_VERSION" --description "Multi-cloud Block Storage" "multicloud$MULTICLOUD_VERSION"
+    openstack endpoint create --region RegionOne "multicloud$MULTICLOUD_VERSION" public "http://$HOST_IP:8089/$MULTICLOUD_VERSION/%(tenant_id)s"
+    openstack endpoint create --region RegionOne "multicloud$MULTICLOUD_VERSION" internal "http://$HOST_IP:8089/$MULTICLOUD_VERSION/%(tenant_id)s"
+    openstack endpoint create --region RegionOne "multicloud$MULTICLOUD_VERSION" admin "http://$HOST_IP:8089/$MULTICLOUD_VERSION/%(tenant_id)s"
 }
 
 delete_redundancy_data() {
@@ -115,11 +139,10 @@ download_code(){
     fi
 }
 
+
 install(){
     create_user
     download_code
-    opensds_conf
-
     # If keystone is ready to start, there is no need continue next step.
     if wait_for_url "http://$HOST_IP/identity" "keystone" 0.25 4; then
         return
@@ -127,21 +150,27 @@ install(){
     devstack_local_conf
     cd "${DEV_STACK_DIR}"
     su "$STACK_USER_NAME" -c "${DEV_STACK_DIR}/stack.sh" >/dev/null
-    create_user_and_endpoint
     delete_redundancy_data
 }
 
-cleanup() {
-    su "$STACK_USER_NAME" -c "${DEV_STACK_DIR}/clean.sh" >/dev/null
-}
-
 uninstall(){
+    su "$STACK_USER_NAME" -c "${DEV_STACK_DIR}/clean.sh" >/dev/null
     su "$STACK_USER_NAME" -c "${DEV_STACK_DIR}/unstack.sh" >/dev/null
 }
 
-uninstall_purge(){
+uninstall_purge() {
     rm "${STACK_HOME:?'STACK_HOME must be defined and cannot be empty'}/*" -rf
     remove_user
+}
+
+config_opensds() {
+    opensds_conf
+    create_user_and_endpoint_for_opensds
+}
+
+config_multicloud() {
+    multicloud_conf
+    create_user_and_endpoint_for_multicloud
 }
 
 # ***************************
@@ -162,16 +191,17 @@ case "$# $1" in
     echo "Starting uninstall keystone..."
     uninstall
     ;;
-    "1 cleanup")
-    echo "Starting cleanup keystone..."
-    cleanup
+    "1 config")
+    [[ X$2 != Xopensds || X$2 != Xmulticloud ]] && echo "config type must be opensds or multicloud" && exit
+    echo "Starting config $2 ..."
+    config_$2
     ;;
     "1 uninstall_purge")
     echo "Starting uninstall purge keystone..."
     uninstall_purge
     ;;
      *)
-    echo "The value of the parameter can only be one of the following: install/uninstall/cleanup/uninstall_purge"
+    echo "Usage: $(basename $0) <install|config|uninstall|uninstall_purge> [parameters ...]"
     exit 1
     ;;
 esac

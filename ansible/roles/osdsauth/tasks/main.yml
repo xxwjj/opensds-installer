@@ -17,5 +17,6 @@
   shell: "{{ item }}"
   with_items:
     - bash ./script/keystone.sh install
+    - bash ./script/keystone.sh config opensds
   when: deploy_project != "multicloud" and opensds_auth_strategy == "keystone"
   become: yes

@@ -87,10 +87,10 @@ cp "$ANSIBLE_CONF_DIR/policy.json" "$OPENSDS_CONFIG_DIR"
 
 multicloud_conf() {
     local compose_file=/opt/opensds-gelato-linux-amd64/docker-compose.yml
-    sed -i "s,OS_AUTH_AUTHSTRATEGY:.*$,OS_AUTH_AUTHSTRATEGY: \"keystone\"," $compose_file
-    sed -i "s,OS_AUTH_URL:.*$,OS_AUTH_URL: \"http://$HOST_IP/identity\"," $compose_file
-    sed -i "s,OS_USERNAME:.*$,OS_USERNAME: \"$MULTICLOUD_SERVER_NAME\"," $compose_file
-    sed -i "s,OS_PASSWORD:.*$,OS_PASSWORD: \"$MULTICLOUD_PASSWORD\"," $compose_file
+    sed -i "s,OS_AUTH_AUTHSTRATEGY=.*$,OS_AUTH_AUTHSTRATEGY=\"keystone\"," $compose_file
+    sed -i "s,OS_AUTH_URL=.*$,OS_AUTH_URL=\"http://$HOST_IP/identity\"," $compose_file
+    sed -i "s,OS_USERNAME=.*$,OS_USERNAME=\"$MULTICLOUD_SERVER_NAME\"," $compose_file
+    sed -i "s,OS_PASSWORD=.*$,OS_PASSWORD=\"$STACK_PASSWORD\"," $compose_file
 }
 create_user_and_endpoint_for_opensds(){
     . "$DEV_STACK_DIR/openrc" admin admin
@@ -191,8 +191,8 @@ case "$# $1" in
     echo "Starting uninstall keystone..."
     uninstall
     ;;
-    "1 config")
-    [[ X$2 != Xopensds || X$2 != Xmulticloud ]] && echo "config type must be opensds or multicloud" && exit
+    "2 config")
+    [[ X$2 != Xopensds && X$2 != Xmulticloud ]] && echo "config type must be opensds or multicloud" && exit 1
     echo "Starting config $2 ..."
     config_$2
     ;;
